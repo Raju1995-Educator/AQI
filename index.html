@@ -1,1 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Air Quality Dashboard</title>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { font-family: sans-serif; background: #121212; color: white; text-align: center; }
+        .card { background: #1e1e1e; padding: 20px; border-radius: 10px; display: inline-block; margin: 10px; min-width: 200px; }
+        #chart-container { width: 80%; margin: auto; }
+    </style>
+</head>
+<body>
+    <h1>Real-Time Air Monitor</h1>
+    
+    <div class="card"><h3>Temp</h3><h2 id="temp">--</h2></div>
+    <div class="card"><h3>CO2</h3><h2 id="co2">--</h2></div>
+    <div class="card"><h3>Status</h3><h2 id="aqi">--</h2></div>
 
+    <div id="chart-container"><canvas id="aqiChart"></canvas></div>
+
+    <script>
+        // PASTE YOUR FIREBASE CONFIG HERE
+        const firebaseConfig = {
+            apiKey: "AIzaSyA7WhAjT4VpWoAdvYDzPU7Xxv-ukGARhp0",
+            databaseURL: "https://airmonitordashboard-default-rtdb.asia-southeast1.firebasedatabase.app",
+            projectId: "airmonitordashboard"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.database();
+
+        // 1. Live Data
+        db.ref('current').on('value', (snap) => {
+            const data = snap.val();
+            document.getElementById('temp').innerText = data.temp + "°C";
+            document.getElementById('co2').innerText = data.co2 + " ppm";
+            document.getElementById('aqi').innerText = data.aqi;
+        });
+
+        // 2. History Chart (Last 20 readings)
+        const ctx = document.getElementById('aqiChart').getContext('2d');
+        const chart = new Chart(ctx, {
+            type: 'line',
+            data: { labels: [], datasets: [{ label: 'CO2 Levels', data: [], borderColor: 'lime' }] }
+        });
+
+        db.ref('logs').limitToLast(20).on('value', (snap) => {
+            const logs = snap.val();
+            const values = Object.values(logs).map(l => l.co2);
+            chart.data.labels = values.map((_, i) => i);
+            chart.data.datasets[0].data = values;
+            chart.update();
+        });
+    </script>
+</body>
+</html>
