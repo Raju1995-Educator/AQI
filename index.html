@@ -9,18 +9,18 @@
         .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; max-width: 1000px; margin: auto; }
         .card { background: #1e293b; padding: 25px; border-radius: 15px; border: 1px solid #334155; }
         .val { font-size: 2.5rem; font-weight: bold; color: #38bdf8; }
-        .status-box { padding: 40px; border-radius: 20px; margin-bottom: 25px; font-size: 2rem; font-weight: bold; }
+        .status-box { padding: 40px; border-radius: 20px; margin-bottom: 25px; font-size: 2rem; font-weight: bold; transition: 0.5s; }
         .GOOD { background: #10b981; } .MODERATE { background: #f59e0b; } .BAD { background: #ef4444; }
     </style>
 </head>
 <body>
     <h1>🌍 Live Environment Monitor</h1>
     <div id="statusBox" class="status-box">AQI STATUS: WAITING...</div>
+    <div id="aqiScore" style="font-size: 1.5rem; margin-bottom: 20px;">Exact AQI Value: --</div>
+    
     <div class="grid">
         <div class="card">Temperature<div id="temp" class="val">--</div></div>
         <div class="card">Humidity<div id="hum" class="val">--</div></div>
-        <div class="card">Pressure<div id="pres" class="val">--</div></div>
-        <div class="card">Altitude<div id="alt" class="val">--</div></div>
         <div class="card">CO2 Level<div id="co2" class="val">--</div></div>
         <div class="card">Vo (Voltage)<div id="vo" class="val">--</div></div>
     </div>
@@ -37,15 +37,16 @@
         };
         firebase.initializeApp(firebaseConfig);
         const db = firebase.database();
+
         db.ref('current').on('value', (snap) => {
             const d = snap.val();
             if (d) {
                 document.getElementById('temp').innerText = d.temp + "°C";
                 document.getElementById('hum').innerText = d.hum + "%";
-                document.getElementById('pres').innerText = d.pres + " hPa";
-                document.getElementById('alt').innerText = d.alt.toFixed(0) + "m";
                 document.getElementById('co2').innerText = d.co2.toFixed(0) + " ppm";
                 document.getElementById('vo').innerText = d.vo.toFixed(2) + "V";
+                document.getElementById('aqiScore').innerText = "Exact AQI Value: " + d.aqiVal.toFixed(0);
+                
                 const sBox = document.getElementById('statusBox');
                 sBox.innerText = "AQI STATUS: " + d.aqi;
                 sBox.className = "status-box " + d.aqi;
