@@ -2,56 +2,63 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Air Quality Dashboard</title>
+    <title>Air Quality Live Monitor</title>
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
-        body { font-family: sans-serif; background: #121212; color: white; text-align: center; }
-        .card { background: #1e1e1e; padding: 20px; border-radius: 10px; display: inline-block; margin: 10px; min-width: 200px; }
-        #chart-container { width: 80%; margin: auto; }
+        body { font-family: 'Segoe UI', sans-serif; background: #0f172a; color: white; text-align: center; padding: 20px; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; max-width: 1000px; margin: auto; }
+        .card { background: #1e293b; padding: 20px; border-radius: 12px; border: 1px solid #334155; }
+        .val { font-size: 2rem; font-weight: bold; color: #38bdf8; margin: 10px 0; }
+        .aqi-box { padding: 30px; border-radius: 15px; margin-bottom: 20px; font-size: 1.5rem; font-weight: bold; }
+        .GOOD { background: #059669; } .MODERATE { background: #d97706; } .BAD { background: #dc2626; }
+        .info { background: #1e1b4b; padding: 20px; border-radius: 12px; margin-top: 30px; text-align: left; max-width: 1000px; margin-inline: auto; }
     </style>
 </head>
 <body>
-    <h1>Real-Time Air Monitor</h1>
+    <h1>🌍 Environment Dashboard</h1>
     
-    <div class="card"><h3>Temp</h3><h2 id="temp">--</h2></div>
-    <div class="card"><h3>CO2</h3><h2 id="co2">--</h2></div>
-    <div class="card"><h3>Status</h3><h2 id="aqi">--</h2></div>
+    <div id="aqiDisplay" class="aqi-box">AQI STATUS: LOADING...</div>
 
-    <div id="chart-container"><canvas id="aqiChart"></canvas></div>
+    <div class="grid">
+        <div class="card">Temperature<div id="temp" class="val">--</div></div>
+        <div class="card">Humidity<div id="hum" class="val">--</div></div>
+        <div class="card">Pressure<div id="pres" class="val">--</div></div>
+        <div class="card">Altitude<div id="alt" class="val">--</div></div>
+        <div class="card">CO2 Level<div id="co2" class="val">--</div></div>
+        <div class="card">Vo (Voltage)<div id="vo" class="val">--</div></div>
+    </div>
+
+    <div class="info">
+        <h3>📊 Sensor Explanation</h3>
+        <p><b>Vo (Voltage):</b> Raw voltage from MQ135. High voltage = High pollution.</p>
+        <p><b>AQI GOOD (0-800ppm):</b> Safe for all.</p>
+        <p><b>AQI MODERATE (800-1500ppm):</b> Open windows for ventilation.</p>
+        <p><b>AQI BAD (>1500ppm):</b> High CO2 levels, health risk.</p>
+    </div>
 
     <script>
-        // PASTE YOUR FIREBASE CONFIG HERE
         const firebaseConfig = {
             apiKey: "AIzaSyA7WhAjT4VpWoAdvYDzPU7Xxv-ukGARhp0",
             databaseURL: "https://airmonitordashboard-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "airmonitordashboard",
             projectId: "airmonitordashboard"
         };
         firebase.initializeApp(firebaseConfig);
         const db = firebase.database();
 
-        // 1. Live Data
         db.ref('current').on('value', (snap) => {
             const data = snap.val();
             document.getElementById('temp').innerText = data.temp + "°C";
+            document.getElementById('hum').innerText = data.hum + "%";
+            document.getElementById('pres').innerText = data.pres + " hPa";
+            document.getElementById('alt').innerText = data.alt.toFixed(1) + "m";
             document.getElementById('co2').innerText = data.co2 + " ppm";
-            document.getElementById('aqi').innerText = data.aqi;
-        });
-
-        // 2. History Chart (Last 20 readings)
-        const ctx = document.getElementById('aqiChart').getContext('2d');
-        const chart = new Chart(ctx, {
-            type: 'line',
-            data: { labels: [], datasets: [{ label: 'CO2 Levels', data: [], borderColor: 'lime' }] }
-        });
-
-        db.ref('logs').limitToLast(20).on('value', (snap) => {
-            const logs = snap.val();
-            const values = Object.values(logs).map(l => l.co2);
-            chart.data.labels = values.map((_, i) => i);
-            chart.data.datasets[0].data = values;
-            chart.update();
+            document.getElementById('vo').innerText = data.vo.toFixed(2) + "V";
+            
+            const aqiDiv = document.getElementById('aqiDisplay');
+            aqiDiv.innerText = "AQI STATUS: " + data.aqi;
+            aqiDiv.className = "aqi-box " + data.aqi;
         });
     </script>
 </body>
