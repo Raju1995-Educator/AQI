@@ -1,44 +1,38 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <title>Air Quality Live Monitor</title>
+    <title>Air Quality Dashboard</title>
     <script src="https://www.gstatic.com/firebasejs/9.1.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.1.0/firebase-database-compat.js"></script>
     <style>
-        body { font-family: 'Segoe UI', sans-serif; background: #0f172a; color: white; text-align: center; padding: 20px; }
-        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; max-width: 1000px; margin: auto; }
-        .card { background: #1e293b; padding: 20px; border-radius: 12px; border: 1px solid #334155; }
-        .val { font-size: 2rem; font-weight: bold; color: #38bdf8; margin: 10px 0; }
-        .aqi-box { padding: 30px; border-radius: 15px; margin-bottom: 20px; font-size: 1.5rem; font-weight: bold; transition: 0.5s; }
-        .GOOD { background: #059669; } 
-        .MODERATE { background: #d97706; } 
-        .BAD { background: #dc2626; }
-        .info { background: #1e1b4b; padding: 20px; border-radius: 12px; margin-top: 30px; text-align: left; max-width: 1000px; margin: 30px auto; }
+        body { font-family: sans-serif; background: #0f172a; color: white; text-align: center; padding: 20px; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; max-width: 1000px; margin: auto; }
+        .card { background: #1e293b; padding: 25px; border-radius: 15px; border: 1px solid #334155; }
+        .val { font-size: 2.5rem; font-weight: bold; color: #38bdf8; }
+        .status-box { padding: 40px; border-radius: 20px; margin-bottom: 25px; font-size: 2rem; font-weight: bold; }
+        .GOOD { background: #10b981; } .MODERATE { background: #f59e0b; } .BAD { background: #ef4444; }
+        .footer { margin-top: 40px; color: #94a3b8; font-size: 0.9rem; }
     </style>
 </head>
 <body>
-    <h1>🌍 Environment Dashboard</h1>
+    <h1>🌍 Live Environment Monitor</h1>
     
-    <div id="aqiDisplay" class="aqi-box">AQI STATUS: WAITING FOR DATA...</div>
+    <div id="statusBox" class="status-box">AQI STATUS: LOADING...</div>
 
     <div class="grid">
         <div class="card">Temperature<div id="temp" class="val">--</div></div>
         <div class="card">Humidity<div id="hum" class="val">--</div></div>
         <div class="card">Pressure<div id="pres" class="val">--</div></div>
         <div class="card">Altitude<div id="alt" class="val">--</div></div>
-        <div class="card">CO2 Level<div id="co2" class="val">--</div></div>
-        <div class="card">Vo (Voltage)<div id="vo" class="val">--</div></div>
+        <div class="card">CO2 Concentration<div id="co2" class="val">--</div></div>
+        <div class="card">Vo (Sensor Voltage)<div id="vo" class="val">--</div></div>
     </div>
 
-    <div class="info">
-        <h3>📊 Sensor Explanation</h3>
-        <p><b>Vo (Voltage):</b> Raw voltage from MQ135. Higher voltage indicates higher concentration of pollutants.</p>
-        <p><b>AQI Levels:</b> <b>Good</b> (0-800ppm) is safe; <b>Moderate</b> (800-1500ppm) needs ventilation; <b>Bad</b> (>1500ppm) is a health risk.</p>
+    <div class="footer">
+        <p>Vo explanation: Raw voltage output from MQ135 sensor. Higher voltage means higher pollution levels.</p>
     </div>
 
     <script>
-        // Your exact credentials
         const firebaseConfig = {
             apiKey: "AIzaSyA7WhAjT4VpWoAdvYDzPU7Xxv-ukGARhp0",
             authDomain: "airmonitordashboard.firebaseapp.com",
@@ -49,24 +43,22 @@
             appId: "1:157039782026:web:8264799adb38b29109e573"
         };
 
-        // Initialize Firebase using the Compat SDK
         firebase.initializeApp(firebaseConfig);
         const db = firebase.database();
 
-        // Listen for data changes in the 'current' node
         db.ref('current').on('value', (snap) => {
             const data = snap.val();
             if (data) {
                 document.getElementById('temp').innerText = data.temp + "°C";
                 document.getElementById('hum').innerText = data.hum + "%";
                 document.getElementById('pres').innerText = data.pres + " hPa";
-                document.getElementById('alt').innerText = data.alt.toFixed(1) + "m";
-                document.getElementById('co2').innerText = data.co2 + " ppm";
+                document.getElementById('alt').innerText = data.alt.toFixed(0) + "m";
+                document.getElementById('co2').innerText = data.co2.toFixed(0) + " ppm";
                 document.getElementById('vo').innerText = data.vo.toFixed(2) + "V";
                 
-                const aqiDiv = document.getElementById('aqiDisplay');
-                aqiDiv.innerText = "AQI STATUS: " + data.aqi;
-                aqiDiv.className = "aqi-box " + data.aqi;
+                const sBox = document.getElementById('statusBox');
+                sBox.innerText = "AQI STATUS: " + data.aqi;
+                sBox.className = "status-box " + data.aqi;
             }
         });
     </script>
