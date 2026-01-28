@@ -2,42 +2,90 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>PVM School AQI Monitoring</title>
     <script src="https://www.gstatic.com/firebasejs/9.1.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.1.0/firebase-database-compat.js"></script>
+    
     <style>
-        body { font-family: 'Segoe UI', sans-serif; background: #0f172a; color: white; text-align: center; padding: 20px; }
-        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; max-width: 1000px; margin: auto; }
-        .card { background: #1e293b; padding: 20px; border-radius: 12px; border: 1px solid #334155; }
-        .val { font-size: 2.2rem; font-weight: bold; color: #38bdf8; margin: 10px 0; }
-        .status-box { padding: 30px; border-radius: 15px; margin-bottom: 20px; font-size: 1.8rem; font-weight: bold; transition: 0.5s; }
-        .GOOD { background: #10b981; } .MODERATE { background: #f59e0b; } .BAD { background: #ef4444; }
-        .info { background: #1e1b4b; padding: 30px; border-radius: 15px; text-align: left; max-width: 1000px; margin: 30px auto; }
-        h1 { color: #38bdf8; }
+        :root {
+            --bg: #0f172a; --card: #1e293b; --text: #f8fafc;
+            --accent: #38bdf8; --good: #10b981; --mod: #f59e0b; --bad: #ef4444;
+        }
+        body { font-family: 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 20px; }
+        header { text-align: center; padding: 30px 0; border-bottom: 1px solid #334155; }
+        h1 { color: var(--accent); margin: 0; }
+        
+        .status-banner {
+            max-width: 1000px; margin: 20px auto; padding: 25px;
+            border-radius: 15px; text-align: center; font-size: 1.8rem;
+            font-weight: bold; transition: 0.5s;
+        }
+        .WAITING { background: #475569; }
+        .GOOD { background: var(--good); }
+        .MODERATE { background: var(--mod); }
+        .BAD { background: var(--bad); }
+
+        .grid {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px; max-width: 1000px; margin: 0 auto;
+        }
+        .card { background: var(--card); padding: 20px; border-radius: 12px; border: 1px solid #334155; text-align: center; }
+        .label { font-size: 0.8rem; color: #94a3b8; text-transform: uppercase; }
+        .value { font-size: 2rem; font-weight: bold; color: var(--accent); margin-top: 5px; }
+
+        .info-section {
+            max-width: 1000px; margin: 40px auto; background: #1e1b4b;
+            padding: 25px; border-radius: 15px; line-height: 1.6;
+        }
+        .info-section h2 { color: var(--accent); }
+        .stage-table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+        .stage-table th, .stage-table td { padding: 12px; border: 1px solid #334155; text-align: left; }
     </style>
 </head>
 <body>
-    <h1>PVM School AQI Monitoring</h1>
-    <div id="statusBox" class="status-box">WAITING FOR DATA...</div>
+
+    <header>
+        <h1>PVM School AQI Monitoring</h1>
+        <p>Live Classroom Environment Intelligence</p>
+    </header>
+
+    <div id="statusBanner" class="status-banner WAITING">AQI STATUS: LOADING...</div>
 
     <div class="grid">
-        <div class="card">Temperature<div id="temp" class="val">--</div></div>
-        <div class="card">Humidity<div id="hum" class="val">--</div></div>
-        <div class="card">CO2 Level<div id="co2" class="val">--</div></div>
-        <div class="card">AQI Score<div id="aqiVal" class="val">--</div></div>
-        <div class="card">Pressure<div id="pres" class="val">--</div></div>
-        <div class="card">Vo (Voltage)<div id="vo" class="val">--</div></div>
+        <div class="card"><div class="label">Temperature</div><div id="temp" class="value">--</div></div>
+        <div class="card"><div class="label">Humidity</div><div id="hum" class="value">--</div></div>
+        <div class="card"><div class="label">CO2 Level</div><div id="co2" class="value">--</div></div>
+        <div class="card"><div class="label">AQI Score</div><div id="aqiVal" class="value">--</div></div>
+        <div class="card"><div class="label">Pressure</div><div id="pres" class="value">--</div></div>
+        <div class="card"><div class="label">Voltage (Vo)</div><div id="vo" class="value">--</div></div>
     </div>
 
-    <div class="info">
-        <h2>📊 Understanding Your Device Data</h2>
+    <div class="info-section">
+        <h2>🔍 Measured Parameters Explained</h2>
         <ul>
-            <li><strong>Temperature:</strong> Measures the classroom heat level in Celsius (°C).</li>
-            <li><strong>Humidity:</strong> Percentage of moisture in the air. Ideal school levels are 40-60%.</li>
-            <li><strong>CO2 Level:</strong> Measured in PPM (Parts Per Million). High levels indicate poor ventilation.</li>
-            <li><strong>Vo (Voltage):</strong> The raw signal from the MQ135 sensor. Higher voltage means more pollutants detected.</li>
-            <li><strong>AQI Score:</strong> A summary number from 0 to 500. 0-100 is Good, 101-200 is Moderate, and 201+ is Bad.</li>
+            <li><strong>Temperature:</strong> Indoor heat level. Ideal classroom range is 22-26°C.</li>
+            <li><strong>Humidity:</strong> Air moisture percentage. 40-60% is most comfortable for students.</li>
+            <li><strong>CO2 Level:</strong> Carbon Dioxide in PPM. High levels mean the air is "stale" and needs ventilation.</li>
+            <li><strong>Voltage (Vo):</strong> Raw output from the MQ135 sensor. Higher voltage indicates higher pollution.</li>
+            <li><strong>AQI Score:</strong> A universal number from 0 to 500 representing overall safety.</li>
         </ul>
+
+        <h2>🏥 AQI Stages</h2>
+        
+
+[Image of air quality index levels chart]
+
+        <table class="stage-table">
+            <thead>
+                <tr><th>Stage</th><th>Score</th><th>Impact</th></tr>
+            </thead>
+            <tbody>
+                <tr style="background: #065f46;"><td>GOOD</td><td>0 - 100</td><td>Fresh Air. Perfect for learning.</td></tr>
+                <tr style="background: #92400e;"><td>MODERATE</td><td>101 - 200</td><td>Stale Air. Open windows for fresh air.</td></tr>
+                <tr style="background: #991b1b;"><td>BAD</td><td>201+</td><td>Poor Air. May cause headaches/fatigue.</td></tr>
+            </tbody>
+        </table>
     </div>
 
     <script>
@@ -50,8 +98,11 @@
             messagingSenderId: "157039782026",
             appId: "1:157039782026:web:8264799adb38b29109e573"
         };
+
         firebase.initializeApp(firebaseConfig);
-        firebase.database().ref('current').on('value', (snap) => {
+        const db = firebase.database();
+
+        db.ref('current').on('value', (snap) => {
             const d = snap.val();
             if (d) {
                 document.getElementById('temp').innerText = d.temp.toFixed(1) + "°C";
@@ -60,9 +111,10 @@
                 document.getElementById('aqiVal').innerText = d.aqiVal.toFixed(0);
                 document.getElementById('pres').innerText = d.pres.toFixed(0) + " hPa";
                 document.getElementById('vo').innerText = d.vo.toFixed(2) + "V";
-                const sBox = document.getElementById('statusBox');
-                sBox.innerText = "AQI STATUS: " + d.aqi;
-                sBox.className = "status-box " + d.aqi;
+
+                const banner = document.getElementById('statusBanner');
+                banner.innerText = "AQI STATUS: " + d.aqi;
+                banner.className = "status-banner " + d.aqi;
             }
         });
     </script>
