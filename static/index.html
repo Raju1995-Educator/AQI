@@ -1,0 +1,973 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>KRM Air Monitor — Industrial AI Leak Warning System</title>
+  <meta name="description" content="Real-time industrial air quality monitoring with AI-powered predictive gas leak detection and hardware buzzer alarm for ESP32 sensor networks." />
+
+  <!-- Tailwind CSS CDN with local fallback styles -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    if (typeof tailwindcss !== 'undefined') {
+      tailwindcss.config = {
+        darkMode: 'class',
+        theme: {
+          extend: {
+            fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] },
+            colors: {
+              surface:  { 50: '#0b0f19', 100: '#111827', 200: '#1a2236', 300: '#243049' },
+              accent:   { DEFAULT: '#3b82f6', light: '#60a5fa', glow: '#2563eb' },
+              success:  { DEFAULT: '#10b981', glow: '#059669' },
+              warning:  { DEFAULT: '#f59e0b', glow: '#d97706' },
+              danger:   { DEFAULT: '#ef4444', glow: '#dc2626' },
+            },
+          },
+        },
+      };
+    }
+  </script>
+
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+
+  <style>
+    /* ---- Base Styles & Fallbacks ---- */
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body { font-family: 'Segoe UI', Inter, system-ui, -apple-system, sans-serif; background: #0b0f19; color: #e2e8f0; }
+
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: #111827; }
+    ::-webkit-scrollbar-thumb { background: #374151; border-radius: 3px; }
+
+    .glass-card {
+      background: rgba(17, 24, 39, 0.75);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 16px;
+      transition: all 0.25s ease;
+    }
+    .glass-card:hover {
+      border-color: rgba(255,255,255,0.15);
+      box-shadow: 0 8px 32px rgba(0,0,0,0.35);
+    }
+
+    .glow-green {
+      border-color: rgba(16,185,129,0.3) !important;
+      box-shadow: 0 0 20px rgba(16,185,129,0.15);
+    }
+    .glow-amber {
+      border-color: rgba(245,158,11,0.4) !important;
+      box-shadow: 0 0 25px rgba(245,158,11,0.25);
+      animation: pulse-amber 1.2s ease-in-out infinite;
+    }
+    @keyframes pulse-amber {
+      0%, 100% { box-shadow: 0 0 10px rgba(245,158,11,0.3); }
+      50% { box-shadow: 0 0 30px rgba(245,158,11,0.5); }
+    }
+
+    .glow-red {
+      border-color: rgba(239,68,68,0.5) !important;
+      box-shadow: 0 0 35px rgba(239,68,68,0.35);
+      animation: flash-red 0.6s ease-in-out infinite;
+    }
+    @keyframes flash-red {
+      0%, 100% { box-shadow: 0 0 15px rgba(239,68,68,0.4); background: rgba(239,68,68,0.15); }
+      50% { box-shadow: 0 0 45px rgba(239,68,68,0.6); background: rgba(239,68,68,0.28); }
+    }
+
+    .badge-connected { background: rgba(16,185,129,0.15); color: #10b981; border: 1px solid rgba(16,185,129,0.35); }
+    .badge-simulated { background: rgba(59,130,246,0.15); color: #60a5fa; border: 1px solid rgba(59,130,246,0.35); }
+    .badge-disconnected { background: rgba(239,68,68,0.15); color: #ef4444; border: 1px solid rgba(239,68,68,0.35); }
+
+    .buzzer-active-crit {
+      background: rgba(239,68,68,0.2);
+      border-color: rgba(239,68,68,0.6) !important;
+      animation: buzzer-strobe 0.4s ease-in-out infinite alternate;
+    }
+    .buzzer-active-warn {
+      background: rgba(245,158,11,0.15);
+      border-color: rgba(245,158,11,0.5) !important;
+      animation: buzzer-warn 1s ease-in-out infinite alternate;
+    }
+    @keyframes buzzer-strobe {
+      from { transform: scale(1); filter: drop-shadow(0 0 10px rgba(239,68,68,0.4)); }
+      to { transform: scale(1.02); filter: drop-shadow(0 0 25px rgba(239,68,68,0.9)); }
+    }
+    @keyframes buzzer-warn {
+      from { transform: scale(1); filter: drop-shadow(0 0 8px rgba(245,158,11,0.3)); }
+      to { transform: scale(1.01); filter: drop-shadow(0 0 18px rgba(245,158,11,0.7)); }
+    }
+
+    .kpi-icon {
+      width: 48px; height: 48px;
+      border-radius: 12px;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .slope-up   { color: #ef4444; font-weight: bold; }
+    .slope-down { color: #10b981; font-weight: bold; }
+    .slope-flat { color: #64748b; }
+
+    .chart-wrap { position: relative; width: 100%; height: 320px; }
+
+    .status-banner {
+      transition: all 0.35s ease;
+      border-radius: 16px;
+      padding: 20px 28px;
+    }
+
+    /* Sound waves animation */
+    .sound-wave {
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
+      height: 16px;
+    }
+    .sound-wave span {
+      display: block;
+      width: 3px;
+      background: currentColor;
+      border-radius: 2px;
+      animation: sound-bounce 0.8s ease-in-out infinite alternate;
+    }
+    .sound-wave span:nth-child(1) { height: 6px; animation-delay: 0.1s; }
+    .sound-wave span:nth-child(2) { height: 14px; animation-delay: 0.3s; }
+    .sound-wave span:nth-child(3) { height: 10px; animation-delay: 0.2s; }
+    .sound-wave span:nth-child(4) { height: 16px; animation-delay: 0.4s; }
+    @keyframes sound-bounce {
+      from { height: 4px; }
+      to { height: 16px; }
+    }
+  </style>
+</head>
+
+<body class="min-h-screen">
+  <!-- ═══════════════════ HEADER ═══════════════════ -->
+  <header class="sticky top-0 z-50 border-b border-white/5" style="background: rgba(11,15,25,0.92); backdrop-filter: blur(14px);">
+    <div class="max-w-7xl mx-auto flex flex-wrap items-center justify-between px-4 sm:px-6 py-3 gap-3">
+      <!-- Brand -->
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-cyan-400 flex items-center justify-center shadow-lg shadow-blue-500/20 text-white font-black text-lg">
+          K
+        </div>
+        <div>
+          <h1 class="text-lg font-bold tracking-tight text-white leading-tight">KRM Air Monitor</h1>
+          <p class="text-[11px] font-medium text-slate-400 tracking-wider uppercase">Industrial AI Leak Warning & Buzzer Alarm</p>
+        </div>
+      </div>
+
+      <!-- Controls + Audio + Connection Badge -->
+      <div class="flex flex-wrap items-center gap-2 sm:gap-3">
+        <!-- Audio Mute / Unmute Switch -->
+        <button id="btn-audio-toggle" onclick="toggleAudioMute()" title="Toggle browser buzzer siren audio" class="text-xs font-semibold px-3 py-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 border border-emerald-500/30 transition-all flex items-center gap-1.5">
+          <span id="audio-icon">🔊</span>
+          <span id="audio-status-text">Audio: Active</span>
+        </button>
+
+        <!-- Test Buzzer -->
+        <button onclick="testBuzzerSound()" class="text-xs font-semibold px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-all flex items-center gap-1">
+          <span>🔔</span> Test Alarm
+        </button>
+
+        <!-- Simulation Toggle -->
+        <button id="btn-toggle-sim" onclick="toggleAutoSim()" class="text-xs font-semibold px-3 py-1.5 rounded-lg bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/30 transition-all flex items-center gap-1.5">
+          <span id="sim-btn-text">Live Sim</span>
+        </button>
+
+        <span id="ip-badge" class="hidden md:inline-block text-xs font-mono text-slate-400 bg-slate-800/80 px-3 py-1.5 rounded-lg border border-slate-700">0.0.0.0:5000</span>
+        
+        <span id="conn-badge" class="badge-disconnected text-xs font-semibold px-3 py-1.5 rounded-full flex items-center gap-1.5 transition-all">
+          <span id="conn-dot" class="w-2.5 h-2.5 rounded-full bg-red-500 inline-block animate-ping"></span>
+          <span id="conn-text">Connecting...</span>
+        </span>
+      </div>
+    </div>
+  </header>
+
+  <!-- ═══════════════════ MAIN ═══════════════════ -->
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-6">
+
+    <!-- ── QUICK SIMULATOR & SPIKE TRIGGER TOOLBAR ── -->
+    <section class="glass-card p-4 flex flex-wrap items-center justify-between gap-3 border-dashed border-blue-500/30">
+      <div class="flex items-center gap-2">
+        <span class="w-2 h-2 rounded-full bg-blue-400 animate-ping"></span>
+        <span class="text-xs font-bold text-slate-300">Live Spike & Scenario Controls:</span>
+        <span class="text-xs text-slate-400 hidden md:inline">Test hardware buzzer & AI detection triggers instantly</span>
+      </div>
+      <div class="flex flex-wrap items-center gap-2">
+        <button onclick="triggerScenario('normal')" class="text-xs px-3 py-1.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 border border-emerald-500/30 transition-all font-medium">
+          ✓ Normal Telemetry
+        </button>
+        <button onclick="triggerScenario('leak_early')" class="text-xs px-3 py-1.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-400 border border-amber-500/30 transition-all font-medium">
+          ⚡ Simulate Micro-Leak
+        </button>
+        <button onclick="triggerScenario('critical_leak')" class="text-xs px-3 py-1.5 rounded-lg bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/40 transition-all font-semibold shadow-lg shadow-red-500/10 flex items-center gap-1">
+          <span>🚨</span> Trigger Gas Spike (Buzzer ON)
+        </button>
+        <button onclick="triggerScenario('recovery')" class="text-xs px-3 py-1.5 rounded-lg bg-slate-700/50 hover:bg-slate-700 text-slate-300 border border-slate-600/40 transition-all font-medium">
+          ↺ Recover / Flush
+        </button>
+      </div>
+    </section>
+
+    <!-- ── AI STATUS & HARDWARE BUZZER HERO BANNER ── -->
+    <section id="ai-banner" class="status-banner glass-card glow-green flex flex-wrap sm:flex-nowrap items-center gap-4">
+      <div id="ai-icon-wrap" class="w-14 h-14 rounded-2xl flex items-center justify-center bg-emerald-500/15 shrink-0 text-2xl">
+        🛡️
+      </div>
+      <div class="flex-1 min-w-[200px]">
+        <div class="flex items-center gap-2 mb-0.5">
+          <p class="text-xs font-semibold uppercase tracking-widest text-slate-400">AI Risk Assessment</p>
+          <span id="spike-badge" class="hidden text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded bg-red-500/20 text-red-400 border border-red-500/40 animate-pulse">
+            ⚡ Spike Triggered
+          </span>
+        </div>
+        <p id="ai-status-text" class="text-2xl font-extrabold text-emerald-400 tracking-tight">NORMAL</p>
+        <p id="ai-status-sub" class="text-xs text-slate-400 mt-0.5">All sensor readings within safe operating parameters</p>
+      </div>
+
+      <!-- Buzzer & Hardware State Pill -->
+      <div class="flex sm:flex-col items-end gap-2 shrink-0 ml-auto">
+        <div id="buzzer-status-pill" class="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-slate-800/80 border border-slate-700 text-slate-300 text-xs font-bold transition-all">
+          <span id="buzzer-icon">🔇</span>
+          <span id="buzzer-status-label">Buzzer: Standby</span>
+          <div id="buzzer-waves" class="sound-wave hidden text-red-400">
+            <span></span><span></span><span></span><span></span>
+          </div>
+        </div>
+        <div class="text-right hidden sm:block">
+          <p class="text-[10px] text-slate-500 uppercase tracking-wider">Anomaly Score</p>
+          <p id="ai-score-val" class="text-base font-bold text-slate-300 tabular-nums">0.00</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── KPI CARDS GRID ── -->
+    <section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+
+      <!-- Card 1: Combustible Gas -->
+      <div class="glass-card p-5 relative overflow-hidden" id="card-mq2">
+        <div class="flex items-start gap-4">
+          <div class="kpi-icon bg-orange-500/10 text-xl">
+            🔥
+          </div>
+          <div class="flex-1 min-w-0">
+            <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Combustible Gas</p>
+            <p class="text-3xl font-extrabold text-white tabular-nums mt-1" id="val-mq2">—</p>
+            <p class="text-xs text-slate-500 mt-0.5">MQ-2 ADC · <span id="status-mq2" class="text-emerald-400 font-semibold">OK</span></p>
+          </div>
+          <span id="trend-mq2" class="slope-flat text-lg mt-1">—</span>
+        </div>
+        <div id="mq2-spike-alert" class="hidden mt-3 pt-2 border-t border-red-500/20 text-[11px] text-red-400 font-semibold flex items-center justify-between">
+          <span>🚨 SPIKE DETECTED</span>
+          <span class="text-[10px] text-slate-400">Buzzer ACTIVE</span>
+        </div>
+      </div>
+
+      <!-- Card 2: Air Quality -->
+      <div class="glass-card p-5 relative overflow-hidden" id="card-mq135">
+        <div class="flex items-start gap-4">
+          <div class="kpi-icon bg-violet-500/10 text-xl">
+            💨
+          </div>
+          <div class="flex-1 min-w-0">
+            <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Air Quality / Toxic</p>
+            <p class="text-3xl font-extrabold text-white tabular-nums mt-1" id="val-mq135">—</p>
+            <p class="text-xs text-slate-500 mt-0.5">MQ-135 ADC · <span id="status-mq135" class="text-emerald-400 font-semibold">OK</span></p>
+          </div>
+          <span id="trend-mq135" class="slope-flat text-lg mt-1">—</span>
+        </div>
+        <div id="mq135-spike-alert" class="hidden mt-3 pt-2 border-t border-red-500/20 text-[11px] text-red-400 font-semibold flex items-center justify-between">
+          <span>🚨 SPIKE DETECTED</span>
+          <span class="text-[10px] text-slate-400">Buzzer ACTIVE</span>
+        </div>
+      </div>
+
+      <!-- Card 3: Climate -->
+      <div class="glass-card p-5" id="card-climate">
+        <div class="flex items-start gap-4">
+          <div class="kpi-icon bg-cyan-500/10 text-xl">
+            🌡️
+          </div>
+          <div class="flex-1 min-w-0">
+            <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Ambient Climate</p>
+            <p class="text-3xl font-extrabold text-white tabular-nums mt-1"><span id="val-temp">—</span><span class="text-base font-normal text-slate-400">°C</span></p>
+            <p class="text-xs text-slate-500 mt-0.5">Humidity <span id="val-hum" class="text-white font-semibold">—</span>%</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Card 4: Pressure & VOC -->
+      <div class="glass-card p-5" id="card-pressure">
+        <div class="flex items-start gap-4">
+          <div class="kpi-icon bg-emerald-500/10 text-xl">
+            🧭
+          </div>
+          <div class="flex-1 min-w-0">
+            <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Pressure & VOC</p>
+            <p class="text-3xl font-extrabold text-white tabular-nums mt-1"><span id="val-press">—</span><span class="text-base font-normal text-slate-400"> hPa</span></p>
+            <p class="text-xs text-slate-500 mt-0.5">VOC <span id="val-voc" class="text-white font-semibold">—</span> kΩ</p>
+          </div>
+          <span id="trend-voc" class="slope-flat text-lg mt-1">—</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── CHARTS ROW + RATE OF CHANGE & BUZZER STATUS ── -->
+    <section class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+
+      <!-- Main time-series chart -->
+      <div class="glass-card p-5 lg:col-span-2">
+        <div class="flex flex-wrap items-center justify-between mb-4 gap-2">
+          <div>
+            <p class="text-sm font-bold text-white">Gas Concentration Timeline</p>
+            <p class="text-[11px] text-slate-400">Last 30 readings · MQ-2 / MQ-135 / VOC</p>
+          </div>
+          <div class="flex items-center gap-4 text-[10px] font-semibold uppercase tracking-wider">
+            <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-orange-400 inline-block"></span> MQ-2</span>
+            <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-violet-400 inline-block"></span> MQ-135</span>
+            <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-cyan-400 inline-block"></span> VOC</span>
+          </div>
+        </div>
+        <div class="chart-wrap">
+          <canvas id="mainChart"></canvas>
+        </div>
+      </div>
+
+      <!-- Rate-of-change & Hardware Buzzer Panel -->
+      <div class="glass-card p-5 flex flex-col justify-between space-y-4">
+        <div>
+          <div class="flex items-center justify-between mb-1">
+            <p class="text-sm font-bold text-white">Rate of Change (dGas/dt)</p>
+            <span id="roc-status-badge" class="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-800 text-slate-400">Baseline</span>
+          </div>
+          <p class="text-[11px] text-slate-400 mb-4">Slope spike & velocity indicators</p>
+
+          <!-- ΔMQ-2 -->
+          <div class="space-y-4">
+            <div>
+              <div class="flex items-center justify-between mb-1">
+                <span class="text-xs font-semibold text-slate-300">Δ MQ-2 (Combustible)</span>
+                <span id="roc-mq2-val" class="text-sm font-bold text-white tabular-nums">0</span>
+              </div>
+              <div class="w-full h-2.5 rounded-full bg-slate-800 overflow-hidden">
+                <div id="roc-mq2-bar" class="h-full rounded-full bg-orange-400 transition-all duration-300" style="width:50%"></div>
+              </div>
+            </div>
+
+            <!-- ΔMQ-135 -->
+            <div>
+              <div class="flex items-center justify-between mb-1">
+                <span class="text-xs font-semibold text-slate-300">Δ MQ-135 (Air Quality)</span>
+                <span id="roc-mq135-val" class="text-sm font-bold text-white tabular-nums">0</span>
+              </div>
+              <div class="w-full h-2.5 rounded-full bg-slate-800 overflow-hidden">
+                <div id="roc-mq135-bar" class="h-full rounded-full bg-violet-400 transition-all duration-300" style="width:50%"></div>
+              </div>
+            </div>
+
+            <!-- ΔVOC -->
+            <div>
+              <div class="flex items-center justify-between mb-1">
+                <span class="text-xs font-semibold text-slate-300">Δ VOC Resistance</span>
+                <span id="roc-voc-val" class="text-sm font-bold text-white tabular-nums">0.0</span>
+              </div>
+              <div class="w-full h-2.5 rounded-full bg-slate-800 overflow-hidden">
+                <div id="roc-voc-bar" class="h-full rounded-full bg-cyan-400 transition-all duration-300" style="width:50%"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Hardware & Buzzer Info Box -->
+        <div class="glass-card p-3 rounded-xl border border-white/5" style="background: rgba(255,255,255,0.02);">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-[11px] font-bold text-slate-300 flex items-center gap-1.5">
+              <span>🔊</span> ESP32 Buzzer (GPIO 23)
+            </span>
+            <span id="hw-buzzer-pin-state" class="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-400">
+              PIN LOW
+            </span>
+          </div>
+          <div class="grid grid-cols-3 gap-2 text-center text-xs">
+            <div class="p-2 rounded-lg bg-slate-900/50">
+              <p class="text-[10px] text-slate-500">Spike Limit</p>
+              <p class="font-bold text-slate-300">+300 Δ</p>
+            </div>
+            <div class="p-2 rounded-lg bg-slate-900/50">
+              <p class="text-[10px] text-slate-500">Crit Limit</p>
+              <p class="font-bold text-slate-300">+600 Δ</p>
+            </div>
+            <div class="p-2 rounded-lg bg-slate-900/50">
+              <p class="text-[10px] text-slate-500">Alarm Mode</p>
+              <p id="alarm-mode-text" class="font-bold text-emerald-400">OFF</p>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ── FOOTER ── -->
+    <footer class="text-center text-xs text-slate-500 py-4 border-t border-white/5 flex flex-wrap items-center justify-between gap-2">
+      <div>KRM Air Monitor v1.1 &middot; Isolation Forest Anomaly Engine &middot; ESP32 Buzzer Alarm</div>
+      <div id="footer-time" class="font-mono"></div>
+    </footer>
+  </main>
+
+  <!-- ═══════════════════ ROBUST JAVASCRIPT & AUDIO ENGINE ═══════════════════ -->
+  <script>
+    const POLL_INTERVAL = 1500;   // ms
+    const MAX_CHART_PTS = 30;
+    const API_BASE = window.location.origin;
+
+    let autoSimTimer = null;
+    let isAutoSimulating = false;
+    let mainChart = null;
+
+    // Web Audio State
+    let audioCtx = null;
+    let audioMuted = false;
+    let currentAlarmOsc = null;
+    let currentAlarmGain = null;
+    let alarmInterval = null;
+    let activeBuzzerMode = "OFF";
+
+    const $ = id => document.getElementById(id);
+
+    // ── Web Audio Synthesizer for Browser Alarm ──
+    function getAudioContext() {
+      if (!audioCtx) {
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        if (AudioContext) {
+          audioCtx = new AudioContext();
+        }
+      }
+      if (audioCtx && audioCtx.state === 'suspended') {
+        audioCtx.resume();
+      }
+      return audioCtx;
+    }
+
+    function toggleAudioMute() {
+      audioMuted = !audioMuted;
+      const btn = $('btn-audio-toggle');
+      const icon = $('audio-icon');
+      const label = $('audio-status-text');
+
+      if (audioMuted) {
+        stopBrowserAlarm();
+        if (btn) btn.className = 'text-xs font-semibold px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 border border-slate-700 transition-all flex items-center gap-1.5';
+        if (icon) icon.textContent = '🔇';
+        if (label) label.textContent = 'Audio: Muted';
+      } else {
+        getAudioContext();
+        if (btn) btn.className = 'text-xs font-semibold px-3 py-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 border border-emerald-500/30 transition-all flex items-center gap-1.5';
+        if (icon) icon.textContent = '🔊';
+        if (label) label.textContent = 'Audio: Active';
+        if (activeBuzzerMode !== "OFF") {
+          playBrowserAlarm(activeBuzzerMode);
+        }
+      }
+    }
+
+    function playTone(freq, durationMs, type = 'square') {
+      try {
+        const ctx = getAudioContext();
+        if (!ctx || audioMuted) return;
+
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+
+        osc.type = type;
+        osc.frequency.setValueAtTime(freq, ctx.currentTime);
+
+        gain.gain.setValueAtTime(0.12, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + (durationMs / 1000));
+
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+
+        osc.start();
+        osc.stop(ctx.currentTime + (durationMs / 1000));
+      } catch (err) {
+        console.warn("Audio playTone error:", err);
+      }
+    }
+
+    function stopBrowserAlarm() {
+      if (alarmInterval) {
+        clearInterval(alarmInterval);
+        alarmInterval = null;
+      }
+      if (currentAlarmOsc) {
+        try { currentAlarmOsc.stop(); } catch (_) {}
+        currentAlarmOsc = null;
+      }
+    }
+
+    function playBrowserAlarm(mode) {
+      if (audioMuted) return;
+      stopBrowserAlarm();
+
+      const ctx = getAudioContext();
+      if (!ctx) return;
+
+      if (mode === "CRITICAL") {
+        // High-low emergency siren pulse every 220ms
+        let step = 0;
+        alarmInterval = setInterval(() => {
+          if (audioMuted || activeBuzzerMode !== "CRITICAL") {
+            stopBrowserAlarm();
+            return;
+          }
+          const freq = (step % 2 === 0) ? 1400 : 900;
+          playTone(freq, 100, 'sawtooth');
+          step++;
+        }, 180);
+      } else if (mode === "WARNING") {
+        // Double-beep warning chirp every 1.5s
+        alarmInterval = setInterval(() => {
+          if (audioMuted || activeBuzzerMode !== "WARNING") {
+            stopBrowserAlarm();
+            return;
+          }
+          playTone(1050, 80, 'sine');
+          setTimeout(() => {
+            if (!audioMuted && activeBuzzerMode === "WARNING") playTone(1250, 90, 'sine');
+          }, 120);
+        }, 1500);
+      }
+    }
+
+    function testBuzzerSound() {
+      getAudioContext();
+      const prevMuted = audioMuted;
+      audioMuted = false;
+      playTone(1200, 100, 'square');
+      setTimeout(() => playTone(1500, 120, 'sawtooth'), 140);
+      setTimeout(() => { audioMuted = prevMuted; }, 500);
+    }
+
+    // ── Safe Chart initialization ──
+    function initChart() {
+      try {
+        if (typeof Chart === 'undefined') {
+          console.warn("Chart.js loading...");
+          return;
+        }
+        const canvas = $('mainChart');
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+
+        const g1 = ctx.createLinearGradient(0, 0, 0, 320);
+        g1.addColorStop(0, 'rgba(251,146,60,0.3)');
+        g1.addColorStop(1, 'rgba(251,146,60,0)');
+
+        const g2 = ctx.createLinearGradient(0, 0, 0, 320);
+        g2.addColorStop(0, 'rgba(167,139,250,0.3)');
+        g2.addColorStop(1, 'rgba(167,139,250,0)');
+
+        const g3 = ctx.createLinearGradient(0, 0, 0, 320);
+        g3.addColorStop(0, 'rgba(34,211,238,0.25)');
+        g3.addColorStop(1, 'rgba(34,211,238,0)');
+
+        mainChart = new Chart(ctx, {
+          type: 'line',
+          data: {
+            labels: [],
+            datasets: [
+              {
+                label: 'MQ-2',
+                data: [],
+                borderColor: '#fb923c',
+                backgroundColor: g1,
+                borderWidth: 2,
+                tension: 0.3,
+                fill: true,
+                pointRadius: 2,
+                yAxisID: 'y',
+              },
+              {
+                label: 'MQ-135',
+                data: [],
+                borderColor: '#a78bfa',
+                backgroundColor: g2,
+                borderWidth: 2,
+                tension: 0.3,
+                fill: true,
+                pointRadius: 2,
+                yAxisID: 'y',
+              },
+              {
+                label: 'VOC (kΩ)',
+                data: [],
+                borderColor: '#22d3ee',
+                backgroundColor: g3,
+                borderWidth: 2,
+                tension: 0.3,
+                fill: true,
+                pointRadius: 2,
+                yAxisID: 'y1',
+              },
+            ],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+              legend: { display: false },
+              tooltip: {
+                backgroundColor: 'rgba(17,24,39,0.95)',
+                borderColor: 'rgba(255,255,255,0.1)',
+                borderWidth: 1,
+              },
+            },
+            scales: {
+              x: {
+                ticks: { color: '#64748b', font: { size: 10 }, maxTicksLimit: 8 },
+                grid: { color: 'rgba(255,255,255,0.04)' },
+              },
+              y: {
+                position: 'left',
+                title: { display: true, text: 'Gas ADC', color: '#94a3b8', font: { size: 11 } },
+                ticks: { color: '#64748b', font: { size: 10 } },
+                grid: { color: 'rgba(255,255,255,0.04)' },
+              },
+              y1: {
+                position: 'right',
+                title: { display: true, text: 'VOC (kΩ)', color: '#94a3b8', font: { size: 11 } },
+                ticks: { color: '#64748b', font: { size: 10 } },
+                grid: { drawOnChartArea: false },
+              },
+            },
+          },
+        });
+      } catch (err) {
+        console.error("Chart init error:", err);
+      }
+    }
+
+    function slopeArrow(delta, el) {
+      if (!el) return;
+      if (delta > 20)       { el.textContent = '↑'; el.className = 'text-2xl slope-up font-bold'; }
+      else if (delta < -20) { el.textContent = '↓'; el.className = 'text-2xl slope-down font-bold'; }
+      else                  { el.textContent = '→'; el.className = 'text-2xl slope-flat font-bold'; }
+    }
+
+    function barWidth(delta, maxRange) {
+      const pct = Math.min(100, Math.max(0, ((delta / maxRange) * 50) + 50));
+      return pct + '%';
+    }
+
+    function setConnectionStatus(connected) {
+      const badge = $('conn-badge');
+      const dot = $('conn-dot');
+      const text = $('conn-text');
+      if (!badge || !dot || !text) return;
+
+      if (isAutoSimulating) {
+        badge.className = 'badge-simulated text-xs font-semibold px-3 py-1.5 rounded-full flex items-center gap-1.5 transition-all';
+        dot.className = 'w-2.5 h-2.5 rounded-full bg-blue-400 animate-pulse inline-block';
+        text.textContent = 'Simulating Live Telemetry';
+      } else if (connected) {
+        badge.className = 'badge-connected text-xs font-semibold px-3 py-1.5 rounded-full flex items-center gap-1.5 transition-all';
+        dot.className = 'w-2.5 h-2.5 rounded-full bg-emerald-400 inline-block animate-pulse';
+        text.textContent = 'ESP32 Connected';
+      } else {
+        badge.className = 'badge-disconnected text-xs font-semibold px-3 py-1.5 rounded-full flex items-center gap-1.5 transition-all';
+        dot.className = 'w-2.5 h-2.5 rounded-full bg-red-500 inline-block';
+        text.textContent = 'ESP32 Disconnected';
+      }
+    }
+
+    function updateBuzzerUI(triggered, mode, isSpike) {
+      const pill = $('buzzer-status-pill');
+      const icon = $('buzzer-icon');
+      const label = $('buzzer-status-label');
+      const waves = $('buzzer-waves');
+      const spikeBadge = $('spike-badge');
+      const hwPin = $('hw-buzzer-pin-state');
+      const alarmModeText = $('alarm-mode-text');
+
+      const prevMode = activeBuzzerMode;
+      activeBuzzerMode = triggered ? mode : "OFF";
+
+      // Trigger/Stop browser audio
+      if (activeBuzzerMode !== prevMode) {
+        if (activeBuzzerMode === "OFF") {
+          stopBrowserAlarm();
+        } else {
+          playBrowserAlarm(activeBuzzerMode);
+        }
+      }
+
+      if (spikeBadge) {
+        if (isSpike) {
+          spikeBadge.classList.remove('hidden');
+        } else {
+          spikeBadge.classList.add('hidden');
+        }
+      }
+
+      if (pill && icon && label) {
+        pill.classList.remove('buzzer-active-crit', 'buzzer-active-warn');
+
+        if (mode === "CRITICAL" && triggered) {
+          pill.classList.add('buzzer-active-crit');
+          pill.className = 'flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-red-600/30 border border-red-500 text-red-300 text-xs font-bold transition-all buzzer-active-crit';
+          icon.textContent = '🚨';
+          label.textContent = 'BUZZER: CRITICAL SIREN';
+          if (waves) waves.classList.remove('hidden');
+          if (hwPin) { hwPin.textContent = 'PIN HIGH (PULSE)'; hwPin.className = 'text-[10px] font-mono px-2 py-0.5 rounded bg-red-500/20 text-red-300 border border-red-500/40 animate-pulse'; }
+          if (alarmModeText) { alarmModeText.textContent = 'CRITICAL'; alarmModeText.className = 'font-bold text-red-400'; }
+        } else if (mode === "WARNING" && triggered) {
+          pill.classList.add('buzzer-active-warn');
+          pill.className = 'flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-amber-600/20 border border-amber-500 text-amber-300 text-xs font-bold transition-all buzzer-active-warn';
+          icon.textContent = '⚡';
+          label.textContent = 'BUZZER: WARNING CHIRP';
+          if (waves) waves.classList.remove('hidden');
+          if (hwPin) { hwPin.textContent = 'PIN HIGH (PULSE)'; hwPin.className = 'text-[10px] font-mono px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40'; }
+          if (alarmModeText) { alarmModeText.textContent = 'WARNING'; alarmModeText.className = 'font-bold text-amber-400'; }
+        } else {
+          pill.className = 'flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-slate-800/80 border border-slate-700 text-slate-300 text-xs font-bold transition-all';
+          icon.textContent = '🔇';
+          label.textContent = 'Buzzer: Standby';
+          if (waves) waves.classList.add('hidden');
+          if (hwPin) { hwPin.textContent = 'PIN LOW'; hwPin.className = 'text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-400'; }
+          if (alarmModeText) { alarmModeText.textContent = 'OFF'; alarmModeText.className = 'font-bold text-emerald-400'; }
+        }
+      }
+    }
+
+    function setAIStatus(status, score) {
+      const banner = $('ai-banner');
+      const iconWrap = $('ai-icon-wrap');
+      const statusText = $('ai-status-text');
+      const sub = $('ai-status-sub');
+      const scoreEl = $('ai-score-val');
+      if (!banner) return;
+
+      banner.classList.remove('glow-green', 'glow-amber', 'glow-red');
+
+      if (status === 'CRITICAL LEAK') {
+        banner.classList.add('glow-red');
+        if (iconWrap) {
+          iconWrap.className = 'w-14 h-14 rounded-2xl flex items-center justify-center bg-red-500/20 shrink-0 text-2xl animate-pulse';
+          iconWrap.textContent = '🚨';
+        }
+        if (statusText) {
+          statusText.className = 'text-2xl font-extrabold text-red-400 tracking-tight';
+          statusText.textContent = '⚠ CRITICAL LEAK';
+        }
+        if (sub) sub.textContent = 'EMERGENCY — Dangerous gas concentration or violent spike detected! Evacuate area.';
+      } else if (status === 'PREDICTED LEAK') {
+        banner.classList.add('glow-amber');
+        if (iconWrap) {
+          iconWrap.className = 'w-14 h-14 rounded-2xl flex items-center justify-center bg-amber-500/15 shrink-0 text-2xl';
+          iconWrap.textContent = '⚡';
+        }
+        if (statusText) {
+          statusText.className = 'text-2xl font-extrabold text-amber-400 tracking-tight';
+          statusText.textContent = '⚡ PREDICTED LEAK';
+        }
+        if (sub) sub.textContent = 'Early Warning — Rising gas slope or anomalous telemetry signature detected.';
+      } else {
+        banner.classList.add('glow-green');
+        if (iconWrap) {
+          iconWrap.className = 'w-14 h-14 rounded-2xl flex items-center justify-center bg-emerald-500/15 shrink-0 text-2xl';
+          iconWrap.textContent = '🛡️';
+        }
+        if (statusText) {
+          statusText.className = 'text-2xl font-extrabold text-emerald-400 tracking-tight';
+          statusText.textContent = 'NORMAL';
+        }
+        if (sub) sub.textContent = 'All sensor readings within safe operating parameters.';
+      }
+
+      if (scoreEl) {
+        scoreEl.textContent = (typeof score === 'number') ? score.toFixed(3) : '0.00';
+      }
+    }
+
+    function updateKPIs(r) {
+      if (!r) return;
+      if ($('val-mq2')) $('val-mq2').textContent = r.mq2 ?? '0';
+      if ($('val-mq135')) $('val-mq135').textContent = r.mq135 ?? '0';
+      if ($('val-temp')) $('val-temp').textContent = Number(r.temperature || 0).toFixed(1);
+      if ($('val-hum')) $('val-hum').textContent = Number(r.humidity || 0).toFixed(1);
+      if ($('val-press')) $('val-press').textContent = Number(r.pressure || 0).toFixed(1);
+      if ($('val-voc')) $('val-voc').textContent = Number(r.voc_gas_kohm || 0).toFixed(1);
+
+      const dMq2 = r.delta_mq2 || 0;
+      const dMq135 = r.delta_mq135 || 0;
+
+      if ($('status-mq2')) {
+        if (r.mq2 >= 2800 || dMq2 >= 600) { $('status-mq2').textContent = 'CRITICAL'; $('status-mq2').className = 'text-red-400 font-bold'; }
+        else if (r.mq2 >= 1800 || dMq2 >= 300) { $('status-mq2').textContent = 'WARNING'; $('status-mq2').className = 'text-amber-400 font-bold'; }
+        else { $('status-mq2').textContent = 'OK'; $('status-mq2').className = 'text-emerald-400 font-semibold'; }
+      }
+
+      if ($('status-mq135')) {
+        if (r.mq135 >= 2200 || dMq135 >= 600) { $('status-mq135').textContent = 'CRITICAL'; $('status-mq135').className = 'text-red-400 font-bold'; }
+        else if (r.mq135 >= 1400 || dMq135 >= 300) { $('status-mq135').textContent = 'WARNING'; $('status-mq135').className = 'text-amber-400 font-bold'; }
+        else { $('status-mq135').textContent = 'OK'; $('status-mq135').className = 'text-emerald-400 font-semibold'; }
+      }
+
+      if ($('mq2-spike-alert')) {
+        if (dMq2 >= 300 || r.mq2 >= 2800) $('mq2-spike-alert').classList.remove('hidden');
+        else $('mq2-spike-alert').classList.add('hidden');
+      }
+
+      if ($('mq135-spike-alert')) {
+        if (dMq135 >= 300 || r.mq135 >= 2200) $('mq135-spike-alert').classList.remove('hidden');
+        else $('mq135-spike-alert').classList.add('hidden');
+      }
+
+      slopeArrow(r.delta_mq2 || 0, $('trend-mq2'));
+      slopeArrow(r.delta_mq135 || 0, $('trend-mq135'));
+      slopeArrow(-(r.delta_voc || 0), $('trend-voc'));
+    }
+
+    function updateROC(r) {
+      if (!r) return;
+      const dMq2 = r.delta_mq2 || 0;
+      const dMq135 = r.delta_mq135 || 0;
+      const dVoc = r.delta_voc || 0;
+
+      if ($('roc-mq2-val')) $('roc-mq2-val').textContent = (dMq2 > 0 ? '+' : '') + Number(dMq2).toFixed(0);
+      if ($('roc-mq135-val')) $('roc-mq135-val').textContent = (dMq135 > 0 ? '+' : '') + Number(dMq135).toFixed(0);
+      if ($('roc-voc-val')) $('roc-voc-val').textContent = (dVoc > 0 ? '+' : '') + Number(dVoc).toFixed(1);
+
+      if ($('roc-mq2-bar')) {
+        $('roc-mq2-bar').style.width = barWidth(dMq2, 500);
+        $('roc-mq2-bar').className = `h-full rounded-full transition-all duration-300 ${dMq2 > 300 ? 'bg-red-500 animate-pulse' : dMq2 > 50 ? 'bg-orange-400' : 'bg-emerald-400'}`;
+      }
+      if ($('roc-mq135-bar')) {
+        $('roc-mq135-bar').style.width = barWidth(dMq135, 500);
+        $('roc-mq135-bar').className = `h-full rounded-full transition-all duration-300 ${dMq135 > 300 ? 'bg-red-500 animate-pulse' : dMq135 > 50 ? 'bg-violet-400' : 'bg-emerald-400'}`;
+      }
+      if ($('roc-voc-bar')) {
+        $('roc-voc-bar').style.width = barWidth(dVoc, 20);
+        $('roc-voc-bar').className = `h-full rounded-full transition-all duration-300 ${dVoc < -5 ? 'bg-red-500 animate-pulse' : dVoc < 0 ? 'bg-cyan-400' : 'bg-emerald-400'}`;
+      }
+
+      if ($('roc-status-badge')) {
+        if (dMq2 >= 300 || dMq135 >= 300) {
+          $('roc-status-badge').textContent = 'SPIKE DETECTED';
+          $('roc-status-badge').className = 'text-[10px] font-bold px-2 py-0.5 rounded bg-red-500/20 text-red-400 border border-red-500/40 animate-pulse';
+        } else if (dMq2 > 50 || dMq135 > 50) {
+          $('roc-status-badge').textContent = 'RISING SLOPE';
+          $('roc-status-badge').className = 'text-[10px] font-bold px-2 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/40';
+        } else {
+          $('roc-status-badge').textContent = 'STABLE BASELINE';
+          $('roc-status-badge').className = 'text-[10px] font-bold px-2 py-0.5 rounded bg-slate-800 text-slate-400';
+        }
+      }
+    }
+
+    function updateChart(records) {
+      if (!mainChart || !records || records.length === 0) return;
+      const last = records.slice(-MAX_CHART_PTS);
+
+      mainChart.data.labels = last.map(r => {
+        const d = r.epoch ? new Date(r.epoch * 1000) : new Date(r.timestamp);
+        return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      });
+      mainChart.data.datasets[0].data = last.map(r => r.mq2);
+      mainChart.data.datasets[1].data = last.map(r => r.mq135);
+      mainChart.data.datasets[2].data = last.map(r => r.voc_gas_kohm);
+      mainChart.update();
+    }
+
+    async function triggerScenario(scenario) {
+      try {
+        getAudioContext();
+        const res = await fetch(`${API_BASE}/api/simulate?scenario=${scenario}`, { method: 'POST' });
+        if (res.ok) await poll();
+      } catch (err) {
+        console.error("Simulation trigger error:", err);
+      }
+    }
+
+    function toggleAutoSim() {
+      isAutoSimulating = !isAutoSimulating;
+      const btn = $('btn-toggle-sim');
+      const text = $('sim-btn-text');
+      if (isAutoSimulating) {
+        getAudioContext();
+        if (btn) btn.className = 'text-xs font-semibold px-3 py-1.5 rounded-lg bg-red-600/20 hover:bg-red-600/30 text-red-400 border border-red-500/30 transition-all flex items-center gap-1.5';
+        if (text) text.textContent = 'Stop Sim';
+        autoSimTimer = setInterval(() => triggerScenario('normal'), 2000);
+        triggerScenario('normal');
+      } else {
+        if (btn) btn.className = 'text-xs font-semibold px-3 py-1.5 rounded-lg bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/30 transition-all flex items-center gap-1.5';
+        if (text) text.textContent = 'Live Sim';
+        if (autoSimTimer) clearInterval(autoSimTimer);
+      }
+      setConnectionStatus(false);
+    }
+
+    let pollFailCount = 0;
+
+    async function poll() {
+      try {
+        // 1. Fetch latest record
+        const latestResp = await fetch(`${API_BASE}/api/telemetry/latest?t=${Date.now()}`);
+        if (latestResp.ok) {
+          const latest = await latestResp.json();
+          setConnectionStatus(latest.connected);
+          if (latest.record) {
+            updateKPIs(latest.record);
+            updateROC(latest.record);
+            setAIStatus(latest.record.ai_status, latest.record.ai_score);
+            updateBuzzerUI(
+              latest.record.buzzer_triggered || false,
+              latest.record.buzzer_mode || "OFF",
+              latest.record.spike_detected || false
+            );
+          }
+          pollFailCount = 0;
+        }
+
+        // 2. Fetch history
+        const histResp = await fetch(`${API_BASE}/api/telemetry/history?limit=${MAX_CHART_PTS}&t=${Date.now()}`);
+        if (histResp.ok) {
+          const hist = await histResp.json();
+          if (hist.records && hist.records.length > 0) {
+            if (!mainChart) initChart();
+            updateChart(hist.records);
+          }
+        }
+      } catch (err) {
+        pollFailCount++;
+        console.warn("Poll fetch warning:", err);
+        if (pollFailCount >= 3) setConnectionStatus(false);
+      }
+    }
+
+    // Initialize Host display
+    try {
+      if ($('ip-badge')) $('ip-badge').textContent = window.location.host || '0.0.0.0:5000';
+    } catch (_) {}
+
+    // Clock
+    function updateClock() {
+      if ($('footer-time')) $('footer-time').textContent = new Date().toLocaleTimeString();
+    }
+    setInterval(updateClock, 1000);
+    updateClock();
+
+    // Start Chart & Polling
+    initChart();
+    poll();
+    setInterval(poll, POLL_INTERVAL);
+  </script>
+</body>
+</html>
